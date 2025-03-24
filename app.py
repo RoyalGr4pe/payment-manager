@@ -1,17 +1,16 @@
-from api.utils import run_initial_subscription_check, format_date_to_iso
-from api.database import Database
+from src.utils import run_initial_subscription_check, format_date_to_iso
+from src.database import Database
 
-from datetime import datetime, timezone
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from slowapi import Limiter
 from dotenv import load_dotenv
 
-import asyncio
 import jsonify
 import uvicorn
 import stripe
@@ -28,7 +27,6 @@ stripe.api_key = os.getenv("LIVE_STRIPE_API_KEY")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup event: run the initial subscription check
-    print("Running initial subscription check...")
     try:
         await run_initial_subscription_check()
         print("Initial subscription check completed successfully.")
