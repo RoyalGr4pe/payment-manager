@@ -75,6 +75,12 @@ stripe.api_key = os.getenv("LIVE_STRIPE_API_KEY")
 # ----------------------------------------------------------------- #
 
 
+@app.get("/")
+@limiter.limit("1/second")
+async def root(request: Request):
+    return {"name": "Flippify Payments API", "version": "1.0.0", "status": "running"}
+
+
 def setup_endpoint(request: Request, secret: str):
     try:
         db = get_db()
