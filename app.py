@@ -12,6 +12,7 @@ from slowapi import Limiter
 from dotenv import load_dotenv
 from pprint import pprint
 
+import traceback
 import uvicorn
 import stripe
 import os
@@ -87,7 +88,7 @@ app.add_middleware(
 
 
 @app.get("/")
-@limiter.limit("1/second")
+@limiter.limit("5/second")
 async def root(request: Request):
     return {"name": "Flippify Payments API", "version": "1.0.0", "status": "running"}
 
@@ -188,7 +189,8 @@ async def checkout_complete(request: Request):
             )
 
     except Exception as error:
-        print(error)
+        print("An error occur in checkout_complete()", error)
+        traceback.format_exc()
         return JSONResponse(
             content={
                 "message": "Failed to update database for checkout",
@@ -276,7 +278,8 @@ async def subscription_update(request: Request):
             )
 
     except Exception as error:
-        print(error)
+        print(f"An error occur in subscription_update(): {error}")
+        print(traceback.format_exc())
         return JSONResponse(
             content={
                 "message": "Failed to update database for subscription update",
@@ -289,5 +292,5 @@ async def subscription_update(request: Request):
     return JSONResponse(content={"message": "Subscription Updated"}, status_code=200)
 
 
-#if __name__ == "__main__":
-    # uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+# if __name__ == "__main__":
+# uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
