@@ -50,7 +50,7 @@ class Database():
             # Mark as initialized
             Database._initialized = True
 
-    async def get_db_client() -> AsyncClient:
+    async def get_db_client(self) -> AsyncClient:
         return AsyncClient(
             project=Database.FIREBASE_PROJECT_ID,
             credentials=Database._firebase_credentials,
