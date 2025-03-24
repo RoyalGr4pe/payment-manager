@@ -6,3 +6,4 @@ stripe==11.6.0
 Requests==2.32.3
 uvicorn==0.34.0
 google==3.0.0
+google-cloud-firestore==2.19.0
