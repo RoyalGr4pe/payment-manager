@@ -56,25 +56,24 @@ class Database():
             credentials=Database._firebase_credentials,
         )
 
-    async def query_user_ref(self, key, value) -> DocumentReference | None:
+    async def query_user_ref(self, key, value) -> AsyncDocumentReference | None:
         # Query and get matching documents
         query_ref = self.db.collection("users").where(key, "==", value)
         results = query_ref.stream()
 
         # Return the document reference of the first match
         async for doc in results:
-            return doc.reference
+            return AsyncDocumentReference(doc.reference._path, self.db)
 
         # Return None if no match found
         return None
 
     async def add_subscriptions(
-        self, user_ref: DocumentReference, subscriptions_to_add
+        self, user_ref: AsyncDocumentReference, subscriptions_to_add
     ):
         try:
             # Fetch user data
-            user_snapshot = user_ref.get()
-            user_data = user_snapshot.to_dict()
+            user_data = (await user_ref.get()).to_dict()
             current_subscriptions = user_data.get("subscriptions", [])
 
             current_subscription_ids = {sub['id'] for sub in current_subscriptions}
@@ -86,12 +85,12 @@ class Database():
 
             # Add only new subscriptions
             if new_subscriptions:
-                user_ref.update(
+                await user_ref.update(
                     {"subscriptions": firestore.ArrayUnion(new_subscriptions)}
                 )
 
             # Fetch the user data
-            subscribed_user = (user_ref.get()).to_dict()
+            subscribed_user = (await user_ref.get()).to_dict()
 
             # Check if the user was referred by another user
             referred_by = subscribed_user.get("referral", {}).get("referredBy")
@@ -104,7 +103,7 @@ class Database():
                 referring_results = await referring_user_query.get()
 
                 for ref_doc in referring_results:
-                    referring_user_ref: DocumentReference = ref_doc.reference
+                    referring_user_ref: AsyncDocumentReference = ref_doc.reference
                     referring_user_data = ref_doc.to_dict()
 
                     # Get the subscribed user's referral code
@@ -117,7 +116,7 @@ class Database():
                         not in referring_user_data.get("referral", {}).get("validReferrals", [])
                     ):
                         # Add to valid_referrals using array_union
-                        referring_user_ref.update({
+                        await referring_user_ref.update({
                             "referral.validReferrals": firestore.ArrayUnion([subscribed_user_id])
                         })
 
@@ -126,11 +125,11 @@ class Database():
             print(traceback.format_exc())
 
     async def remove_subscriptions(
-        self, user_ref: DocumentReference, subscriptions_to_remove
+        self, user_ref: AsyncDocumentReference, subscriptions_to_remove
     ):
         try: 
             # Fetch the user's current subscriptions
-            user_snapshot = user_ref.get()
+            user_snapshot = await user_ref.get()
             user_data = user_snapshot.to_dict()
 
             current_subscriptions = user_data.get("subscriptions", [])
@@ -145,7 +144,7 @@ class Database():
 
             if subscriptions_to_remove_final:
                 # Remove subscriptions by their ID using ArrayRemove
-                user_ref.update(
+                await user_ref.update(
                     {"subscriptions": firestore.ArrayRemove(subscriptions_to_remove_final)}
                 )
 

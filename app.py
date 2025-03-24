@@ -227,7 +227,7 @@ async def subscription_update(request: Request):
                     status_code=404,
                 )
 
-            user_snapshot = user_ref.get()
+            user_snapshot = await user_ref.get()
             user = user_snapshot.to_dict()
             user_subscriptions = user.get("subscriptions", [])
 
@@ -278,7 +278,7 @@ async def subscription_update(request: Request):
             )
 
     except Exception as error:
-        print(f"An error occur in subscription_update(): {error}")
+        print(f"An error occur in subscription_update: {error}")
         print(traceback.format_exc())
         return JSONResponse(
             content={
