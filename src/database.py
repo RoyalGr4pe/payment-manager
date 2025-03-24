@@ -63,7 +63,7 @@ class Database():
 
         # Return the document reference of the first match
         async for doc in results:
-            return AsyncDocumentReference(doc.reference._path, self.db)
+            return AsyncDocumentReference(doc.reference.path, self.db)
 
         # Return None if no match found
         return None
