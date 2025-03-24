@@ -125,12 +125,13 @@ class Database():
                         "referral.validReferrals": firestore.ArrayUnion([subscribed_user_id])
                     })
 
-
     async def remove_subscriptions(
         self, user_ref: AsyncDocumentReference, subscriptions_to_remove
     ):
         # Fetch the user's current subscriptions
-        user_data = (await user_ref.get()).to_dict()
+        user_snapshot = await user_ref.get()
+        user_data = user_snapshot.to_dict()
+        
         current_subscriptions = user_data.get("subscriptions", [])
 
         # Extract the IDs from the subscriptions to remove
