@@ -57,16 +57,18 @@ class Database():
         )
 
     async def query_user_ref(self, key, value) -> AsyncDocumentReference | None:
-        # Query and get matching documents
-        query_ref = self.db.collection("users").where(key, "==", value)
-        results = query_ref.stream()
+        try: 
+            # Query and get matching documents
+            query_ref = self.db.collection("users").where(key, "==", value)
+            results = query_ref.stream()
 
-        # Return the document reference of the first match
-        async for doc in results:
-            return AsyncDocumentReference(doc.reference.path, self.db)
+            # Return the document reference of the first match
+            async for doc in results:
+                return AsyncDocumentReference(doc.reference.path, client=self.db)
 
-        # Return None if no match found
-        return None
+        except Exception as error:
+            print(f"An error occurred in query_user_ref(): {error}")
+            print(traceback.format_exc())
 
     async def add_subscriptions(
         self, user_ref: AsyncDocumentReference, subscriptions_to_add
