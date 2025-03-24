@@ -26,11 +26,12 @@ class Database():
 
     # A flag to track initialization
     _initialized = False
+    _firebase_credentials = None 
 
     def __init__(self):
         if not Database._initialized:
             # Credentials for service account
-            firebase_credentials = service_account.Credentials.from_service_account_info(
+            Database._firebase_credentials = service_account.Credentials.from_service_account_info(
                 {
                     "type": "service_account",
                     "project_id": Database.FIREBASE_PROJECT_ID,
@@ -51,7 +52,8 @@ class Database():
 
         # Firestore client
         self.db = AsyncClient(
-            project=Database.FIREBASE_PROJECT_ID, credentials=firebase_credentials
+            project=Database.FIREBASE_PROJECT_ID,
+            credentials=Database._firebase_credentials,
         )
 
         self.users_col = self.db.collection("users")
@@ -61,24 +63,38 @@ class Database():
         Retrieve a user reference by uid.
         """
         return self.db.collection("users").document(uid)
-    
+
     async def query_user_ref(self, key, value) -> AsyncDocumentReference | None:
         # Query and get matching documents
         query_ref = self.db.collection("users").where(key, "==", value)
-        results = await query_ref.stream()
+        results = query_ref.stream()
 
         # Return the document reference of the first match
         async for doc in results:
             return doc.reference
-        
+
         # Return None if no match found
         return None
-    
-    async def add_subscriptions(self, user_ref: AsyncDocumentReference, subscriptions_to_add):
-        # Add subscriptions using array_union
-        await user_ref.update({
-            "subscriptions": firestore.ArrayUnion(subscriptions_to_add)
-        })
+
+    async def add_subscriptions(
+        self, user_ref: AsyncDocumentReference, subscriptions_to_add
+    ):
+        # Fetch user data
+        user_data = (await user_ref.get()).to_dict()
+        current_subscriptions = user_data.get("subscriptions", [])
+
+        current_subscription_ids = {sub['id'] for sub in current_subscriptions}
+
+        # Find subscriptions that are not already in the user's subscriptions
+        new_subscriptions = [
+            sub for sub in subscriptions_to_add if sub['id'] not in current_subscription_ids
+        ]
+
+        # Add only new subscriptions
+        if new_subscriptions:
+            await user_ref.update(
+                {"subscriptions": firestore.ArrayUnion(new_subscriptions)}
+            )
 
         # Fetch the user data
         subscribed_user = (await user_ref.get()).to_dict()
@@ -109,8 +125,24 @@ class Database():
                         "referral.validReferrals": firestore.ArrayUnion([subscribed_user_id])
                     })
 
-    async def remove_subscriptions(self, user_ref: AsyncDocumentReference, subscriptions_to_remove):
-        # Remove subscriptions using array_remove
-        await user_ref.update({
-            "subscriptions": firestore.ArrayRemove(subscriptions_to_remove)
-        })
+
+    async def remove_subscriptions(
+        self, user_ref: AsyncDocumentReference, subscriptions_to_remove
+    ):
+        # Fetch the user's current subscriptions
+        user_data = (await user_ref.get()).to_dict()
+        current_subscriptions = user_data.get("subscriptions", [])
+
+        # Extract the IDs from the subscriptions to remove
+        subscription_ids_to_remove = {sub["id"] for sub in subscriptions_to_remove}
+
+        # Create an array of subscriptions to remove based on IDs
+        subscriptions_to_remove_final = [
+            sub for sub in current_subscriptions if sub["id"] in subscription_ids_to_remove
+        ]
+
+        if subscriptions_to_remove_final:
+            # Remove subscriptions by their ID using ArrayRemove
+            await user_ref.update(
+                {"subscriptions": firestore.ArrayRemove(subscriptions_to_remove_final)}
+            )

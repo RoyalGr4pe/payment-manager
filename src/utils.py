@@ -15,54 +15,62 @@ async def run_initial_subscription_check():
     # Note: 'user' refers to database and 'customer' refers to stripe
     db = Database()
 
-    async for user_doc in db.users_col.stream():
-        user_ref = user_doc.reference
-        user = user_doc.to_dict()
+    try:
+        users = db.users_col.stream()
 
-        stripe_customer_id = user.get("stripeCustomerId")
-        if stripe_customer_id is None:
-            continue
+        async for user_doc in users:
+            user_ref = user_doc.reference
+            user = user_doc.to_dict()
 
-        # Retrieve all the users subscriptions on stripe
-        try:
-            stripe_customer_subscriptions = stripe.Subscription.list(customer=stripe_customer_id)["data"]
-        except stripe._error.InvalidRequestError:
-            # This is because the customer is either in test mode but live mode is running or
-            # the customer is in live mode but test mode is running
-            continue
+            stripe_customer_id = user.get("stripeCustomerId")
+            if stripe_customer_id is None:
+                continue
 
-        subscriptions_to_add = []
-        subscriptions_to_remove = []
+            # Retrieve all the users subscriptions on stripe
+            try:
+                stripe_customer_subscriptions = stripe.Subscription.list(customer=stripe_customer_id)["data"]
+            except stripe._error.InvalidRequestError:
+                # This is because the customer is either in test mode but live mode is running or
+                # the customer is in live mode but test mode is running
+                continue
 
-        # Add any subscriptions the user now has
-        for subscription in stripe_customer_subscriptions:
-            print(subscription)
-            product_id = subscription["plan"]["product"]
-            stripe_product = stripe.Product.retrieve(product_id)
+            subscriptions_to_add = []
+            subscriptions_to_remove = []
 
-            sub_name = stripe_product['name']
+            # Add any subscriptions the user now has
+            for subscription in stripe_customer_subscriptions:
+                product_id = subscription["plan"]["product"]
+                stripe_product = stripe.Product.retrieve(product_id)
 
-            new_subscription = {
-                "name": sub_name,
-                "id": product_id,
-                "override": False,
-                "createdAt": format_date_to_iso(datetime.now())
-            }
-            subscriptions_to_add.append(new_subscription)          
+                sub_name = stripe_product['name']
 
-        stripe_customer_subscription_names = [sub['plan']['nickname'] for sub in stripe_customer_subscriptions]
+                new_subscription = {
+                    "name": sub_name,
+                    "id": product_id,
+                    "override": False,
+                    "createdAt": format_date_to_iso(datetime.now())
+                }
+                subscriptions_to_add.append(new_subscription)          
 
-        # Identify subscriptions to remove
-        for subscription in user.get('subscriptions', []):
-            if (subscription.get("name") == "admin"):
-                subscriptions_to_remove = []
-                break
+            stripe_customer_subscription_names = [sub['plan']['nickname'] for sub in stripe_customer_subscriptions]
 
-            if (subscription.get('name') not in stripe_customer_subscription_names) and (subscription["override"] == False):
-                subscriptions_to_remove.append(subscription)
+            user_subscriptions = user.get("subscriptions", [])
 
-        if subscriptions_to_add:
-            db.add_subscriptions(user_ref, subscriptions_to_add)
+            # Identify subscriptions to remove
 
-        if subscriptions_to_remove:
-            db.remove_subscriptions(user_ref, subscriptions_to_remove)
+            for subscription in user_subscriptions:
+                if (subscription.get("name") == "admin"):
+                    subscriptions_to_remove = []
+                    break
+
+                if (subscription.get('name') not in stripe_customer_subscription_names) and (subscription["override"] == False):
+                    subscriptions_to_remove.append(subscription)
+
+            if subscriptions_to_add:
+                await db.add_subscriptions(user_ref, subscriptions_to_add)
+
+            if subscriptions_to_remove:
+                await db.remove_subscriptions(user_ref, subscriptions_to_remove)
+
+    except Exception as error:
+        print(f"Error: {error}")

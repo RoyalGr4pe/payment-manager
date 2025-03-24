@@ -7,11 +7,11 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from slowapi import Limiter
 from dotenv import load_dotenv
+from pprint import pprint
 
-import jsonify
 import uvicorn
 import stripe
 import os
@@ -92,27 +92,29 @@ async def root(request: Request):
     return {"name": "Flippify Payments API", "version": "1.0.0", "status": "running"}
 
 
-def setup_endpoint(request: Request, secret: str):
+async def setup_endpoint(request: Request, secret: str):
     try:
         db = get_db()
     except Exception as error:
-        return jsonify({"message": "Error in connecting to database"}), 500
+        print(error)
+        return JSONResponse(
+            content={"message": "Error in connecting to database"}, status_code=500
+        )
 
     try:
         event = None
-        payload = request.data
-        sig_header = request.headers["STRIPE_SIGNATURE"]
-    except:
-        return (
-            jsonify(
-                {
-                    "message": "Failed header information",
-                    "event": None,
-                    "payload": str(request.data),
-                    "sig_header": str(sig_header),
-                }
-            ),
-            500,
+        payload = await request.body()
+        sig_header = request.headers.get("stripe-signature")
+    except Exception as error:
+        print("Failed header information", error)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Failed header information",
+                "event": None,
+                "payload": str(await request.body()),
+                "sig_header": str(request.headers.get("stripe-signature")),
+            },
         )
 
     try:
@@ -120,33 +122,32 @@ def setup_endpoint(request: Request, secret: str):
         event = stripe.Webhook.construct_event(payload, sig_header, endpoint_secret)
     except ValueError as error:
         # Invalid payload
-        return (
-            jsonify(
-                {
-                    "message": "Failed to create event, Invalid Payload",
-                    "error": str(error),
-                }
-            ),
-            400,
+        print("Value error", error)
+        return JSONResponse(
+            content={
+                "message": "Failed to create event, Invalid Payload",
+                "error": str(error),
+            },
+            status_code=400,
         )
     except stripe.error.SignatureVerificationError as error:
+        print("SignatureVerificationError", error)
         # Invalid signature
-        return (
-            jsonify(
-                {
-                    "message": "Failed to create event, Invalid Signature",
-                    "error": str(error),
-                }
-            ),
-            400,
+        return JSONResponse(
+            content={
+                "message": "Failed to create event, Invalid Signature",
+                "error": str(error),
+            },
+            status_code=400,
         )
-
     except Exception as error:
-        return (
-            jsonify(
-                {"message": "Failed to create event, Exception", "error": str(error)}
-            ),
-            500,
+        print("Unknown", error)
+        return JSONResponse(
+            content={
+                "message": "Failed to create event, Exception",
+                "error": str(error),
+            },
+            status_code=500,
         )
 
     return event, db
@@ -156,13 +157,13 @@ def setup_endpoint(request: Request, secret: str):
 @limiter.limit("10/second")
 async def checkout_complete(request: Request):
     try:
-        event, db = setup_endpoint(request, "LIVE_CHECKOUT_COMPLETE_SECRET")
+        event, db = await setup_endpoint(request, "LIVE_CHECKOUT_COMPLETE_SECRET")
+
         if event["type"] == "checkout.session.completed":
             session_data = event["data"]["object"]
-
             stripe_customer_id = session_data["customer"]
-
             subscription_id = session_data["subscription"]
+
             subscription = stripe.Subscription.retrieve(subscription_id)
 
             product_id = subscription["plan"]["product"]
@@ -177,30 +178,33 @@ async def checkout_complete(request: Request):
             }
 
             user_ref = await db.query_user_ref("stripeCustomerId", stripe_customer_id)
-            db.add_subscriptions(user_ref, [data])
+            await db.add_subscriptions(user_ref, [data])
 
         else:
-            return jsonify("Unhandled event type {}".format(event["type"])), 500
+            print(f"Unhandled event type {event['type']}")
+            return JSONResponse(
+                content={"message": f"Unhandled event type {event['type']}"},
+                status_code=500,
+            )
 
     except Exception as error:
-        return (
-            jsonify(
-                {
-                    "message": "Failed to update database for checkout",
-                    "error": str(error),
-                }
-            ),
-            500,
+        print(error)
+        return JSONResponse(
+            content={
+                "message": "Failed to update database for checkout",
+                "error": str(error),
+            },
+            status_code=500,
         )
 
-    return jsonify({"message": "Checkout complete"}), 200
+    return JSONResponse(content={"message": "Checkout complete"}, status_code=200)
 
 
 @app.post("/subscription-update")
 @limiter.limit("10/second")
 async def subscription_update(request: Request):
     try:
-        event, db = setup_endpoint(request, "LIVE_SUBSCRIPTION_UPDATE_SECRET")
+        event, db = await setup_endpoint(request, "LIVE_SUBSCRIPTION_UPDATE_SECRET")
         subscription = event["data"]["object"]
         stripe_customer_id = subscription["customer"]
         plan = subscription["plan"]
@@ -210,18 +214,15 @@ async def subscription_update(request: Request):
 
         elif event["type"] == "customer.subscription.deleted":
             product_id = plan["product"]
-            product = stripe.Product.retrieve(product_id)
-            prod_name = product["name"]
 
             user_ref = await db.query_user_ref("stripeCustomerId", stripe_customer_id)
             if user_ref is None:
-                return (
-                    jsonify(
-                        {
-                            "message": f"User not found. Customer ID: {stripe_customer_id}"
-                        }
-                    ),
-                    404,
+                print(f"User not found. Customer ID: {stripe_customer_id}")
+                return JSONResponse(
+                    content={
+                        "message": f"User not found. Customer ID: {stripe_customer_id}"
+                    },
+                    status_code=404,
                 )
 
             user_snapshot = await user_ref.get()
@@ -235,11 +236,12 @@ async def subscription_update(request: Request):
                     break
 
             if user_subscription is None:
-                return jsonify(
-                    {
+                return JSONResponse(
+                    content={
                         "message": f"Subscription not found. Product ID: {product_id}",
                         "customer": stripe_customer_id,
-                    }
+                    },
+                    status_code=404,
                 )
 
             override = user_subscription.get("override")
@@ -247,47 +249,44 @@ async def subscription_update(request: Request):
             subscription_to_remove = {"id": product_id}
 
             if override == False:
-                db.remove_subscriptions(user_ref, [subscription_to_remove])
-                if sub.get("server_subscription") == True:
-                    db.remove_webhook(
-                        {
-                            "stripeCustomerId": stripe_customer_id,
-                            "subscription_name": prod_name,
-                        }
-                    )
+                await db.remove_subscriptions(user_ref, [subscription_to_remove])
 
-                return jsonify(
-                    {
-                        "message": f"Subscription inactive, removed {product_id} from users file",
+                print(f"Subscription inactive, removed {product_id} from user")
+                return JSONResponse(
+                    content={
+                        "message": f"Subscription inactive, removed {product_id} from user",
                         "customer": stripe_customer_id,
-                    }
+                    },
+                    status_code=200,
                 )
 
-            return (
-                jsonify(
-                    {
-                        "message": f"User role not removed because of override set to {override}"
-                    }
-                ),
-                200,
+            print(f"User role not removed because of override set to {override}")
+            return JSONResponse(
+                content={
+                    "message": f"User role not removed because of override set to {override}"
+                },
+                status_code=200,
             )
 
         else:
-            return jsonify("Unhandled event type {}".format(event["type"]))
+            print(f"Unhandled event type {event['type']}")
+            return JSONResponse(
+                content={"message": f"Unhandled event type {event['type']}"},
+                status_code=500,
+            )
 
     except Exception as error:
-        return (
-            jsonify(
-                {
-                    "message": "Failed to update database for subscription update",
-                    "error": str(error),
-                    "function": "subscription_update",
-                }
-            ),
-            500,
+        print(error)
+        return JSONResponse(
+            content={
+                "message": "Failed to update database for subscription update",
+                "error": str(error),
+                "function": "subscription_update",
+            },
+            status_code=500,
         )
 
-    return jsonify({"message": "Subscription Updated"}), 200
+    return JSONResponse(content={"message": "Subscription Updated"}, status_code=200)
 
 
 #if __name__ == "__main__":
