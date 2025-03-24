@@ -3,12 +3,12 @@
 
 # External Imports
 from google.cloud.firestore_v1.async_client import AsyncClient
-from google.cloud.firestore_v1 import AsyncDocumentReference
+from google.cloud.firestore_v1 import AsyncDocumentReference, DocumentReference
 from google.oauth2 import service_account
 from google.cloud import firestore
 from dotenv import load_dotenv
 
-
+import traceback
 import os
 
 load_dotenv()
@@ -56,15 +56,7 @@ class Database():
             credentials=Database._firebase_credentials,
         )
 
-        self.users_col = self.db.collection("users")
-
-    def query_user_ref_by_id(self, uid: str) -> AsyncDocumentReference:
-        """
-        Retrieve a user reference by uid.
-        """
-        return self.db.collection("users").document(uid)
-
-    async def query_user_ref(self, key, value) -> AsyncDocumentReference | None:
+    async def query_user_ref(self, key, value) -> DocumentReference | None:
         # Query and get matching documents
         query_ref = self.db.collection("users").where(key, "==", value)
         results = query_ref.stream()
@@ -77,73 +69,86 @@ class Database():
         return None
 
     async def add_subscriptions(
-        self, user_ref: AsyncDocumentReference, subscriptions_to_add
+        self, user_ref: DocumentReference, subscriptions_to_add
     ):
-        # Fetch user data
-        user_data = (await user_ref.get()).to_dict()
-        current_subscriptions = user_data.get("subscriptions", [])
+        try:
+            # Fetch user data
+            user_snapshot = user_ref.get()
+            user_data = user_snapshot.to_dict()
+            current_subscriptions = user_data.get("subscriptions", [])
 
-        current_subscription_ids = {sub['id'] for sub in current_subscriptions}
+            current_subscription_ids = {sub['id'] for sub in current_subscriptions}
 
-        # Find subscriptions that are not already in the user's subscriptions
-        new_subscriptions = [
-            sub for sub in subscriptions_to_add if sub['id'] not in current_subscription_ids
-        ]
+            # Find subscriptions that are not already in the user's subscriptions
+            new_subscriptions = [
+                sub for sub in subscriptions_to_add if sub['id'] not in current_subscription_ids
+            ]
 
-        # Add only new subscriptions
-        if new_subscriptions:
-            await user_ref.update(
-                {"subscriptions": firestore.ArrayUnion(new_subscriptions)}
-            )
+            # Add only new subscriptions
+            if new_subscriptions:
+                user_ref.update(
+                    {"subscriptions": firestore.ArrayUnion(new_subscriptions)}
+                )
 
-        # Fetch the user data
-        subscribed_user = (await user_ref.get()).to_dict()
+            # Fetch the user data
+            subscribed_user = (user_ref.get()).to_dict()
 
-        # Check if the user was referred by another user
-        referred_by = subscribed_user.get("referral", {}).get("referredBy")
+            # Check if the user was referred by another user
+            referred_by = subscribed_user.get("referral", {}).get("referredBy")
 
-        if referred_by:
-            # Get the referring user
-            referring_query = self.users_col.where("referral.referralCode", "==", referred_by)
-            referring_results = await referring_query.get()
+            if referred_by:
+                # Get the referring user
+                referring_user_query = self.db.collection("users").where(
+                    "referral.referralCode", "==", referred_by
+                )
+                referring_results = await referring_user_query.get()
 
-            for ref_doc in referring_results:
-                referring_user_ref: AsyncDocumentReference = ref_doc.reference
-                referring_user_data = ref_doc.to_dict()
+                for ref_doc in referring_results:
+                    referring_user_ref: DocumentReference = ref_doc.reference
+                    referring_user_data = ref_doc.to_dict()
 
-                # Get the subscribed user's referral code
-                subscribed_user_id = subscribed_user.get("id")
+                    # Get the subscribed user's referral code
+                    subscribed_user_id = subscribed_user.get("id")
 
-                # Check if referral code is already in valid_referrals
-                if (
-                    subscribed_user_id
-                    and subscribed_user_id
-                    not in referring_user_data.get("referral", {}).get("validReferrals", [])
-                ):
-                    # Add to valid_referrals using array_union
-                    await referring_user_ref.update({
-                        "referral.validReferrals": firestore.ArrayUnion([subscribed_user_id])
-                    })
+                    # Check if referral code is already in valid_referrals
+                    if (
+                        subscribed_user_id
+                        and subscribed_user_id
+                        not in referring_user_data.get("referral", {}).get("validReferrals", [])
+                    ):
+                        # Add to valid_referrals using array_union
+                        referring_user_ref.update({
+                            "referral.validReferrals": firestore.ArrayUnion([subscribed_user_id])
+                        })
+
+        except Exception as error:
+            print(f"An error occurred in remove_subscriptions(): {error}")
+            print(traceback.format_exc())
 
     async def remove_subscriptions(
-        self, user_ref: AsyncDocumentReference, subscriptions_to_remove
+        self, user_ref: DocumentReference, subscriptions_to_remove
     ):
-        # Fetch the user's current subscriptions
-        user_snapshot = await user_ref.get()
-        user_data = user_snapshot.to_dict()
-        
-        current_subscriptions = user_data.get("subscriptions", [])
+        try: 
+            # Fetch the user's current subscriptions
+            user_snapshot = user_ref.get()
+            user_data = user_snapshot.to_dict()
 
-        # Extract the IDs from the subscriptions to remove
-        subscription_ids_to_remove = {sub["id"] for sub in subscriptions_to_remove}
+            current_subscriptions = user_data.get("subscriptions", [])
 
-        # Create an array of subscriptions to remove based on IDs
-        subscriptions_to_remove_final = [
-            sub for sub in current_subscriptions if sub["id"] in subscription_ids_to_remove
-        ]
+            # Extract the IDs from the subscriptions to remove
+            subscription_ids_to_remove = {sub["id"] for sub in subscriptions_to_remove}
 
-        if subscriptions_to_remove_final:
-            # Remove subscriptions by their ID using ArrayRemove
-            await user_ref.update(
-                {"subscriptions": firestore.ArrayRemove(subscriptions_to_remove_final)}
-            )
+            # Create an array of subscriptions to remove based on IDs
+            subscriptions_to_remove_final = [
+                sub for sub in current_subscriptions if sub["id"] in subscription_ids_to_remove
+            ]
+
+            if subscriptions_to_remove_final:
+                # Remove subscriptions by their ID using ArrayRemove
+                user_ref.update(
+                    {"subscriptions": firestore.ArrayRemove(subscriptions_to_remove_final)}
+                )
+
+        except Exception as error:
+            print(f"An error occurred in remove_subscriptions(): {error}")
+            print(traceback.format_exc())

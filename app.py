@@ -227,7 +227,7 @@ async def subscription_update(request: Request):
                     status_code=404,
                 )
 
-            user_snapshot = await user_ref.get()
+            user_snapshot = user_ref.get()
             user = user_snapshot.to_dict()
             user_subscriptions = user.get("subscriptions", [])
 
