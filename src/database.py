@@ -50,21 +50,22 @@ class Database():
             # Mark as initialized
             Database._initialized = True
 
-        # Firestore client
-        self.db = AsyncClient(
+    async def get_db_client() -> AsyncClient:
+        return AsyncClient(
             project=Database.FIREBASE_PROJECT_ID,
             credentials=Database._firebase_credentials,
         )
 
     async def query_user_ref(self, key, value) -> AsyncDocumentReference | None:
         try: 
+            db: AsyncClient = await self.get_db_client()
             # Query and get matching documents
-            query_ref = self.db.collection("users").where(key, "==", value)
+            query_ref = db.collection("users").where(key, "==", value)
             results = query_ref.stream()
 
             # Return the document reference of the first match
             async for doc in results:
-                return self.db.document(doc.reference.path)
+                return db.document(doc.reference.path)
 
         except Exception as error:
             print(f"An error occurred in query_user_ref(): {error}")
@@ -98,8 +99,9 @@ class Database():
             referred_by = subscribed_user.get("referral", {}).get("referredBy")
 
             if referred_by:
+                db: AsyncClient = await self.get_db_client()
                 # Get the referring user
-                referring_user_query = self.db.collection("users").where(
+                referring_user_query = db.collection("users").where(
                     "referral.referralCode", "==", referred_by
                 )
                 referring_results = await referring_user_query.get()
