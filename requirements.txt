@@ -1,0 +1,7 @@
+fastapi==0.115.12
+jsonify==0.5
+protobuf==6.30.1
+python-dotenv==1.0.1
+slowapi==0.1.9
+stripe==11.6.0
+uvicorn==0.34.0
