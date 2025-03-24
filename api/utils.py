@@ -10,14 +10,15 @@ def format_date_to_iso(date: datetime) -> str:
     return date.strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-async def run_inital_subscription_check():
+async def run_initial_subscription_check():
+    print("Running initial subscription check...")
     # Note: 'user' refers to database and 'customer' refers to stripe
     db = Database()
-  
+
     async for user_doc in db.users_col.stream():
         user_ref = user_doc.reference
         user = user_doc.to_dict()
-        
+
         stripe_customer_id = user.get("stripeCustomerId")
         if stripe_customer_id is None:
             continue
@@ -29,7 +30,7 @@ async def run_inital_subscription_check():
             # This is because the customer is either in test mode but live mode is running or
             # the customer is in live mode but test mode is running
             continue
-        
+
         subscriptions_to_add = []
         subscriptions_to_remove = []
 
@@ -38,7 +39,7 @@ async def run_inital_subscription_check():
             print(subscription)
             product_id = subscription["plan"]["product"]
             stripe_product = stripe.Product.retrieve(product_id)
-   
+
             sub_name = stripe_product['name']
 
             new_subscription = {
@@ -56,12 +57,12 @@ async def run_inital_subscription_check():
             if (subscription.get("name") == "admin"):
                 subscriptions_to_remove = []
                 break
-            
+
             if (subscription.get('name') not in stripe_customer_subscription_names) and (subscription["override"] == False):
                 subscriptions_to_remove.append(subscription)
 
         if subscriptions_to_add:
             db.add_subscriptions(user_ref, subscriptions_to_add)
-        
+
         if subscriptions_to_remove:
             db.remove_subscriptions(user_ref, subscriptions_to_remove)
