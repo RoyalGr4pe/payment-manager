@@ -5,3 +5,4 @@ python-dotenv==1.0.1
 slowapi==0.1.9
 stripe==11.6.0
 uvicorn==0.34.0
+google==3.0.0

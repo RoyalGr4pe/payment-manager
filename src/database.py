@@ -6,7 +6,6 @@ from google.cloud.firestore_v1.async_client import AsyncClient
 from google.cloud.firestore_v1 import AsyncDocumentReference
 from google.oauth2 import service_account
 from google.cloud import firestore
-from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 
