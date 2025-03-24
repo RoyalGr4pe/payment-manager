@@ -64,7 +64,7 @@ class Database():
 
             # Return the document reference of the first match
             async for doc in results:
-                return AsyncDocumentReference(doc.reference.path, client=self.db)
+                return self.db.document(doc.reference.path)
 
         except Exception as error:
             print(f"An error occurred in query_user_ref(): {error}")
