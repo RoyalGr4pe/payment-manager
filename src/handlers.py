@@ -46,16 +46,8 @@ async def handle_subscription_update(db: Database, stripe_customer_id: str, prod
         override = user_member_subscription.get("override")
         if override == False:
             # Remove the old subscription
-            await db.remove_subscriptions(user_ref, [{"id": product_id}])
+            await db.remove_subscriptions(user_ref, [{"id": user_member_subscription.get("id")}])
             print(f"Subscription inactive, removed {product_id} from user")
-
-            return JSONResponse(
-                content={
-                    "message": f"Subscription inactive, removed {product_id} from user",
-                    "customer": stripe_customer_id,
-                },
-                status_code=200,
-            )
 
         # Get the product name from the product id and then add the new subscription
         product = stripe.Product.retrieve(product_id)
