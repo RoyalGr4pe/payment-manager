@@ -215,7 +215,7 @@ async def subscription_update(request: Request):
 
         if event["type"] == "customer.subscription.updated":
             # This function handles when the user has upgraded or downgraded their subscription
-            return await handle_subscription_update(event, db, stripe_customer_id, product_id)
+            return await handle_subscription_update(db, stripe_customer_id, product_id)
 
         elif event["type"] == "customer.subscription.deleted":
             return await handle_subscription_deletion(db, stripe_customer_id, product_id)
