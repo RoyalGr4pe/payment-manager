@@ -1,4 +1,5 @@
 from src.utils import run_initial_subscription_check, format_date_to_iso
+from src.handlers import handle_subscription_update, handle_subscription_deletion
 from src.database import Database
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -190,7 +191,7 @@ async def checkout_complete(request: Request):
 
     except Exception as error:
         print("An error occur in checkout_complete()", error)
-        traceback.format_exc()
+        print(traceback.format_exc())
         return JSONResponse(
             content={
                 "message": "Failed to update database for checkout",
@@ -210,65 +211,14 @@ async def subscription_update(request: Request):
         subscription = event["data"]["object"]
         stripe_customer_id = subscription["customer"]
         plan = subscription["plan"]
+        product_id = plan["product"]
 
         if event["type"] == "customer.subscription.updated":
-            pass
+            # This function handles when the user has upgraded or downgraded their subscription
+            return await handle_subscription_update(event, db, stripe_customer_id, product_id)
 
         elif event["type"] == "customer.subscription.deleted":
-            product_id = plan["product"]
-
-            user_ref = await db.query_user_ref("stripeCustomerId", stripe_customer_id)
-            if user_ref is None:
-                print(f"User not found. Customer ID: {stripe_customer_id}")
-                return JSONResponse(
-                    content={
-                        "message": f"User not found. Customer ID: {stripe_customer_id}"
-                    },
-                    status_code=404,
-                )
-
-            user_snapshot = await user_ref.get()
-            user = user_snapshot.to_dict()
-            user_subscriptions = user.get("subscriptions", [])
-
-            user_subscription = None
-            for sub in user_subscriptions:
-                if sub.get("id") == product_id:
-                    user_subscription = sub
-                    break
-
-            if user_subscription is None:
-                return JSONResponse(
-                    content={
-                        "message": f"Subscription not found. Product ID: {product_id}",
-                        "customer": stripe_customer_id,
-                    },
-                    status_code=404,
-                )
-
-            override = user_subscription.get("override")
-
-            subscription_to_remove = {"id": product_id}
-
-            if override == False:
-                await db.remove_subscriptions(user_ref, [subscription_to_remove])
-
-                print(f"Subscription inactive, removed {product_id} from user")
-                return JSONResponse(
-                    content={
-                        "message": f"Subscription inactive, removed {product_id} from user",
-                        "customer": stripe_customer_id,
-                    },
-                    status_code=200,
-                )
-
-            print(f"User role not removed because of override set to {override}")
-            return JSONResponse(
-                content={
-                    "message": f"User role not removed because of override set to {override}"
-                },
-                status_code=200,
-            )
+            return await handle_subscription_deletion(db, stripe_customer_id, product_id)
 
         else:
             print(f"Unhandled event type {event['type']}")
