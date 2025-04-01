@@ -82,12 +82,21 @@ class Database():
             current_subscription_ids = {sub['id'] for sub in current_subscriptions}
 
             # Find subscriptions that are not already in the user's subscriptions
-            new_subscriptions = [
-                sub for sub in subscriptions_to_add if sub['id'] not in current_subscription_ids
-            ]
-
-            authentication = user_data.get("authentication", {})
-            authentication["subscribed"] = True
+            member_sub = None
+            new_subscriptions = []
+            for sub in subscriptions_to_add:
+                if sub['id'] not in current_subscription_ids:
+                    new_subscriptions.append(sub)
+                
+                if "member" in sub.get("name", ""):
+                    member_sub = sub
+            
+            # Add the subscription name to the authentication field
+            # e.g. free, standard, pro, etc.
+            if member_sub is not None:
+                name = member_sub.get("name", "").replace(" - member").lower()
+                authentication = user_data.get("authentication", {})
+                authentication["subscribed"] = name
 
             # Add only new subscriptions
             if new_subscriptions:
