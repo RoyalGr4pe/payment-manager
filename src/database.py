@@ -86,10 +86,16 @@ class Database():
                 sub for sub in subscriptions_to_add if sub['id'] not in current_subscription_ids
             ]
 
+            authentication = user_data.get("authentication", {})
+            authentication["subscribed"] = True
+
             # Add only new subscriptions
             if new_subscriptions:
                 await user_ref.update(
-                    {"subscriptions": firestore.ArrayUnion(new_subscriptions)}
+                    {
+                        "authentication": authentication,
+                        "subscriptions": firestore.ArrayUnion(new_subscriptions)
+                    }
                 )
 
             # Fetch the user data
@@ -137,6 +143,7 @@ class Database():
             user_data = user_snapshot.to_dict()
 
             current_subscriptions = user_data.get("subscriptions", [])
+            authentication = user_data.get("authentication", {})    
 
             # Extract the IDs from the subscriptions to remove
             subscription_ids_to_remove = {sub["id"] for sub in subscriptions_to_remove}
@@ -147,9 +154,13 @@ class Database():
             ]
 
             if subscriptions_to_remove_final:
+                authentication.pop("subscribed", None)
                 # Remove subscriptions by their ID using ArrayRemove
                 await user_ref.update(
-                    {"subscriptions": firestore.ArrayRemove(subscriptions_to_remove_final)}
+                    {
+                        "authentication": authentication,
+                        "subscriptions": firestore.ArrayRemove(subscriptions_to_remove_final)
+                    }
                 )
 
         except Exception as error:
