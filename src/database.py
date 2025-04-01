@@ -89,12 +89,13 @@ class Database():
                     new_subscriptions.append(sub)
                 
                 if "member" in sub.get("name", ""):
-                    member_sub = sub
+                    member_sub: dict = sub
             
             # Add the subscription name to the authentication field
             # e.g. free, standard, pro, etc.
             if member_sub is not None:
-                name = member_sub.get("name", "").replace(" - member").lower()
+                sub_name: str = member_sub.get("name", "")
+                name = sub_name.replace(" - member", "").lower()
                 authentication = user_data.get("authentication", {})
                 authentication["subscribed"] = name
 
