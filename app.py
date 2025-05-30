@@ -169,11 +169,12 @@ async def checkout_complete(request: Request):
             subscription = stripe.Subscription.retrieve(subscription_id)
 
             product_id = subscription["plan"]["product"]
-            product = stripe.Product.retrieve(product_id)
-            prod_name = product["name"]
+            price_id = subscription["plan"]["id"]
+            price = stripe.Price.retrieve(price_id)
+            name = price["nickname"]
 
             data = {
-                "name": prod_name,
+                "name": name,
                 "id": product_id,
                 "override": False,
                 "createdAt": format_date_to_iso(datetime.now(timezone.utc)),
@@ -212,10 +213,11 @@ async def subscription_update(request: Request):
         stripe_customer_id = subscription["customer"]
         plan = subscription["plan"]
         product_id = plan["product"]
+        price_id = plan["id"]
 
         if event["type"] == "customer.subscription.updated":
             # This function handles when the user has upgraded or downgraded their subscription
-            return await handle_subscription_update(db, stripe_customer_id, product_id)
+            return await handle_subscription_update(db, stripe_customer_id, price_id, product_id)
 
         elif event["type"] == "customer.subscription.deleted":
             return await handle_subscription_deletion(db, stripe_customer_id, product_id)

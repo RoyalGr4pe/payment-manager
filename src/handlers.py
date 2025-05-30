@@ -10,7 +10,9 @@ import traceback
 import stripe
 
 
-async def handle_subscription_update(db: Database, stripe_customer_id: str, product_id: str):
+async def handle_subscription_update(
+    db: Database, stripe_customer_id: str, price_id: str, product_id: str
+):
     try:
         user_ref = await db.query_user_ref("stripeCustomerId", stripe_customer_id)
         if user_ref is None:
@@ -30,7 +32,7 @@ async def handle_subscription_update(db: Database, stripe_customer_id: str, prod
         # Get the users member subscription
         user_member_subscription = None
         for sub in user_subscriptions:
-            if "member" in sub.get("name"): 
+            if "member" in sub.get("name"):
                 user_member_subscription = sub
                 break
 
@@ -46,16 +48,18 @@ async def handle_subscription_update(db: Database, stripe_customer_id: str, prod
         override = user_member_subscription.get("override")
         if override == False:
             # Remove the old subscription
-            await db.remove_subscriptions(user_ref, [{"id": user_member_subscription.get("id")}])
+            await db.remove_subscriptions(
+                user_ref, [{"id": user_member_subscription.get("id")}]
+            )
             print(f"Subscription inactive, removed {product_id} from user")
 
         # Get the product name from the product id and then add the new subscription
-        product = stripe.Product.retrieve(product_id)
-        product_name = product.get("name")
+        price = stripe.Price.retrieve(price_id)
+        name = price.get("nickname")
 
         new_subscription = {
             "id": product_id,
-            "name": product_name,
+            "name": name,
             "override": False,
             "createdAt": format_date_to_iso(datetime.now(timezone.utc)),
         }
@@ -71,8 +75,10 @@ async def handle_subscription_update(db: Database, stripe_customer_id: str, prod
         )
 
 
-async def handle_subscription_deletion(db: Database, stripe_customer_id: str, product_id: str):
-    try: 
+async def handle_subscription_deletion(
+    db: Database, stripe_customer_id: str, product_id: str
+):
+    try:
         user_ref = await db.query_user_ref("stripeCustomerId", stripe_customer_id)
         if user_ref is None:
             print(f"User not found. Customer ID: {stripe_customer_id}")
